@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Thermal Video Data Extractor</title>
+  <link rel="stylesheet" href="static/css/output.css">
+
+</head>
+<body class="h-screen w-full flex items-center justify-start flex-col p-2 bg-[#212121] relative font-custom">
+  <div class="fixed z-10 h-20 bg-[#171717] w-full top-0 text-white flex items-center p-5 text-2xl border border-black">ThermaTrack
+  </div>
+  <div id="canva_div" class="h-auto w-auto mt-24 bg-white p-2 flex items-center justify-center flex-col rounded-xl">
+    <h2 class="text-xl font-bold">Click to draw rectangles on the image</h2>
+    <canvas id="canvas"></canvas><br/>
+    <h2 class="text-sm font-bold">Enter the boxes description with comma seperated(eg: forehead, leftcheek, rightcheek etc)</h2>
+    <input type="text" name="description_txt" id="desciption_txt" class="outline-none border border-black h-10 rounded-lg w-full my-2 p-2">
+    <button id="saveBtn" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">Save Rectangles Coordinates</button>
+
+  </div>
+
+  <div id="animation" class="absolute top-0 left-0 h-full w-full flex-1 bg-black opacity-70 items-center justify-center z-20 hidden">
+    <div class="follow-the-leader-line h-full">
+      <div></div>
+      <div></div>
+      <div></div>
+      <div></div>
+      <div></div>
+    </div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+  <script>
+    const canvas = new fabric.Canvas('canvas');
+    const video_url="{{video_path}}"
+    fabric.Image.fromURL("{{ frame_url }}", function(img) {
+      // Set canvas size same as image size
+      canvas.setWidth(img.width);
+      canvas.setHeight(img.height);
+
+      // Set image as canvas background
+      canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas), {
+        originX: 'left',
+        originY: 'top',
+        scaleX: 1,
+        scaleY: 1
+      });
+    });
+
+    // Add rectangle on canvas click
+    canvas.on('mouse:down', function(options) {
+      if (!options.target) { // click on empty space
+        const pointer = canvas.getPointer(options.e);
+        const rect = new fabric.Rect({
+          left: pointer.x,
+          top: pointer.y,
+          width: 100,
+          height: 100,
+          fill: 'transparent',
+          stroke: 'red',
+          strokeWidth: 2,
+          selectable: true
+        });
+        canvas.add(rect);
+      }
+    });
+
+    // Save button handler: get all rects' coordinates and sizes
+    document.getElementById('saveBtn').addEventListener('click', async() => {
+      document.getElementById("animation").classList.replace("hidden","flex")
+      document.getElementById("canva_div").classList.replace("flex","hidden")
+      const rects = canvas.getObjects('rect').map(obj => ({
+        x: obj.left,
+        y: obj.top,
+        width: obj.width * obj.scaleX,
+        height: obj.height * obj.scaleY
+      }));
+      alert(JSON.stringify(rects, null, 2));
+    const inputs=document.getElementById("desciption_txt").value
+
+    console.log(inputs)
+    try {
+    const response = await fetch("/Image_coordinates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        headings_inputs: inputs,
+        coordinates: rects,
+        video_url: video_url
+      })
+    });
+    console.log(response)
+    if (!response.ok) {
+      alert("Something went wrong while sending data to the backend.");
+      return;
+    }
+
+    const result = await response.json();
+    console.log("Rectangles:", rects);
+
+    document.getElementById("animation").classList.replace("flex","hidden")
+    document.getElementById("canva_div").classList.replace("hidden","flex")
+
+    if (result.status === "success" && result.download_url) {
+      const link = document.createElement("a");
+      link.href = result.download_url;
+      link.download = "output.xlsx";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 1000);
+    } else {
+      alert("Processing failed on the server.");
+    }
+
+    window.location.href="/"
+  } catch (err) {
+    console.error("Error:", err);
+    alert("Unexpected error occurred while communicating with the server.");
+  }
+    });
+  </script>
+</body>
+</html>
